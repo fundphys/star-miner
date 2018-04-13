@@ -3,11 +3,14 @@ Extracts the start image propertis from the fits images.
 
 # Dep
   python3 -m venv env  
+  pip install astropy
+  pip install photutils
+
 
 # How to
-  data/ - directory for mount the storage of the fits files
+  fits/ - directory for mount the storage of the fits files
   
-  scv/ - directory for the output csv files 
+  csv/ - directory for the output csv files 
   
   scripts/ - directory for scripts
 
