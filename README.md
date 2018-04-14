@@ -2,9 +2,8 @@
 Extracts the start image propertis from the fits images.
 
 # Dep
-  python3 -m venv env  
-  pip install astropy
-  pip install photutils
+  python3 -m venv env
+  pip install astropy, photutils, scipy
 
 
 # How to

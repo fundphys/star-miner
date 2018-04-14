@@ -19,6 +19,16 @@ imagtype = "light"
 naxis1 =  "4296"
 naxis2 = "4102"
 
+max_peak_lim = 600_000
+min_dist_lim = 100
+crd_min_lim = 150
+crd_max_lim = 3850
+flux_lim_min = 25           
+roundness1_lim_max = 0.1
+roundness2_lim_max = 0.1    
+aprior_seeng = 2.0          #Aprior seeng  
+desc_level_sigma = 10
+
 #folders
 fits_store = "../fits/"
 csv_output = "../csv/"
@@ -31,33 +41,27 @@ def main():
         print("[IMAGTYPE,  FILTER] ")
         for fits_file_name in fitsfiles:
             fits_file_path = os.path.join(root, fits_file_name)
-            if "2018" in fits_file_name:
-                checks = []
-                try:
-                    with fits.open(fits_file_path) as hdul:
-                        date = datetime.strptime(hdul[0].header["DATE_OBS"], "%Y-%m-%dT%H:%M:%S.%f")
-                        checks.append( imagtype in hdul[0].header["IMAGETYP"] )
-                        checks.append( spectral_band in hdul[0].header["FILTER"] )
-                        #print(checks)
-                        if all(checks):
-                            fwhm = 18  # Aprior seeng in Pix
-                            prop = get_seeing( hdul[1].data, fwhm, 10)
-                            if prop:
-                                objects_propertis = np.array(prop)
-                                seeng_x = objects_propertis[:, 0]
-                                seeng_y = objects_propertis[:, 1]
-                                seeng = str(np.median((seeng_x + seeng_y) / 2.0))
-                                print(fits_file_name, date, seeng)
-                                with open(f"../csv/{fits_file_name[:-4]}.csv", "a") as file:
-                                    writer = csv.writer(file)
-                                    writer.writerow( prop )
-                except:
-                    pass
+            check_list = []
+            with fits.open(fits_file_path) as hdul:
+                date = datetime.strptime(hdul[0].header["DATE_OBS"], "%Y-%m-%dT%H:%M:%S.%f")
+                check_list.append( imagtype in hdul[0].header["IMAGETYP"] )
+                check_list.append( spectral_band in hdul[0].header["FILTER"] )
+                if all(check_list):
+                    prop = get_seeing(hdul[1].data, 10, date)
+                    if prop:
+                        objects_propertis = np.array(prop)
+                        seeng_x = objects_propertis[:, 1]
+                        seeng_y = objects_propertis[:, 2]
+                        seeng = str(np.median((seeng_x + seeng_y) / 2.0))
+                        print(fits_file_name, date, seeng)
+                        with open(f"../csv/{fits_file_name[:-5]}.csv", "w") as file:
+                            writer = csv.writer(file)
+                            for item in prop:
+                                writer.writerow(item)
 
-
-def get_seeing(raw_image, fwhm, threshold):
+def get_seeing(raw_image, threshold, date):
     mean, median, std = sigma_clipped_stats(raw_image, sigma=3.0, iters=1)
-    daofind = DAOStarFinder(fwhm=fwhm, threshold=threshold * std, exclude_border=True)    
+    daofind = DAOStarFinder(fwhm = aprior_seeng * seconds_per_pixel, threshold=threshold * std, exclude_border=True)    
     sources = daofind(raw_image - median)
     sources = select_sources( sources )
 
@@ -84,39 +88,27 @@ def get_seeing(raw_image, fwhm, threshold):
         g2 = models.Gaussian2D(sources["peak"][i], x_mean=0, y_mean=0, x_stddev = dx*gaussian_fwhm_to_sigma, y_stddev = dy*gaussian_fwhm_to_sigma)
         gf = fitting.LevMarLSQFitter()
         gaus = gf(g2, X, Y, Z - median )
+        #
         seeng_x = seconds_per_pixel * gaussian_sigma_to_fwhm * gaus.x_stddev.value
         seeng_y = seconds_per_pixel * gaussian_sigma_to_fwhm * gaus.y_stddev.value
         pos_x = sources['xcentroid'].data[i] + gaus.x_mean.value
         pos_y = sources['xcentroid'].data[i] + gaus.y_mean.value
         theta = gaus.theta.value
-        source_prop.append([seeng_x, seeng_y, pos_x, pos_y, theta])
-        #print(seeng_x, seeng_y)
+        source_prop.append([date, seeng_x, seeng_y, pos_x, pos_y, theta])
     return source_prop
 
-def select_sources( sources ):
-    #many very strange constants ))
-    max_peak_lim = 600_000
-    min_dist_lim = 100
-    crd_min_lim = 150
-    crd_max_lim = 3850
-    flux_lim_min = 25
-    roundness1_lim_max = 0.1
-    roundness2_lim_max = 0.1
-    
+def select_sources( sources ):    
     x = sources['xcentroid'].data # Convert to np.array
     y = sources['ycentroid'].data
     peak = sources['peak'].data
     roundness1 = sources["roundness1"].data
     roundness2 = sources["roundness2"].data
     flux = sources["flux"].data
-
     bad_items = []
-    
     for i in range(len(sources)):
         distances = np.sqrt( np.power(x - x[i], 2) + np.power(y - y[i], 2) )
         distances = np.delete(distances, i)
         min_dist = distances.min()
-        
         checks = []
         checks.append( x[i] > crd_min_lim )
         checks.append( x[i] < crd_max_lim )
@@ -129,13 +121,11 @@ def select_sources( sources ):
         checks.append( roundness2[i] < roundness2_lim_max )
         checks.append( min_dist > min_dist_lim)
 
-        print(checks)
+        #print(checks)
         
-        if all(checks):
-            pass
-        else:
+        if not all(checks):
             bad_items.append(i)
-            
+                        
     sources.remove_rows(bad_items)
     return sources
 
